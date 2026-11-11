@@ -85,6 +85,10 @@ create table public.submission_feedback (
 create index classes_teacher_id_idx on public.classes(teacher_id);
 create index class_members_student_id_idx on public.class_members(student_id);
 create index project_assignments_class_id_idx on public.project_assignments(class_id);
+create index project_assignments_assigned_by_idx on public.project_assignments(assigned_by);
+create index projects_created_by_idx on public.projects(created_by);
+create index submission_feedback_submission_id_idx on public.submission_feedback(submission_id);
+create index submission_feedback_teacher_id_idx on public.submission_feedback(teacher_id);
 create index submissions_student_id_idx on public.submissions(student_id);
 create index submissions_class_id_idx on public.submissions(class_id);
 create index submissions_project_id_idx on public.submissions(project_id);
@@ -289,13 +293,15 @@ create policy "class_members_read_teacher_or_student" on public.class_members
 for select to authenticated using (
   student_id = (select auth.uid()) or (select private.teaches_class(class_id))
 );
-create policy "class_members_manage_teacher" on public.class_members
-for all to authenticated
+create policy "class_members_insert_teacher" on public.class_members
+for insert to authenticated
+with check ((select private.teaches_class(class_id)) and (select private.is_student_profile(student_id)));
+create policy "class_members_update_teacher" on public.class_members
+for update to authenticated
 using ((select private.teaches_class(class_id)))
-with check (
-  (select private.teaches_class(class_id))
-  and (select private.is_student_profile(student_id))
-);
+with check ((select private.teaches_class(class_id)) and (select private.is_student_profile(student_id)));
+create policy "class_members_delete_teacher" on public.class_members
+for delete to authenticated using ((select private.teaches_class(class_id)));
 
 create policy "projects_read_creator_or_assigned_student" on public.projects
 for select to authenticated using (
@@ -320,21 +326,25 @@ create policy "assignments_read_teacher_or_class_member" on public.project_assig
 for select to authenticated using (
   (select private.teaches_class(class_id)) or (select private.is_class_member(class_id))
 );
-create policy "assignments_manage_teacher" on public.project_assignments
-for all to authenticated
+create policy "assignments_insert_teacher" on public.project_assignments
+for insert to authenticated with check (
+  (select private.teaches_class(class_id))
+  and exists (select 1 from public.projects p where p.id = project_assignments.project_id and p.created_by = (select auth.uid()))
+);
+create policy "assignments_update_teacher" on public.project_assignments
+for update to authenticated
 using (
   (select private.teaches_class(class_id))
-  and exists (
-    select 1 from public.projects p
-    where p.id = project_assignments.project_id and p.created_by = (select auth.uid())
-  )
+  and exists (select 1 from public.projects p where p.id = project_assignments.project_id and p.created_by = (select auth.uid()))
 )
 with check (
   (select private.teaches_class(class_id))
-  and exists (
-    select 1 from public.projects p
-    where p.id = project_assignments.project_id and p.created_by = (select auth.uid())
-  )
+  and exists (select 1 from public.projects p where p.id = project_assignments.project_id and p.created_by = (select auth.uid()))
+);
+create policy "assignments_delete_teacher" on public.project_assignments
+for delete to authenticated using (
+  (select private.teaches_class(class_id))
+  and exists (select 1 from public.projects p where p.id = project_assignments.project_id and p.created_by = (select auth.uid()))
 );
 
 create policy "submissions_read_owner_or_teacher" on public.submissions
