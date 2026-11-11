@@ -335,6 +335,13 @@ for select to authenticated using (
   and (storage.foldername(name))[1] = 'teacher'
   and (storage.foldername(name))[2] = auth.uid()::text
 );
+create policy "teachers_delete_own_project_files" on storage.objects
+for delete to authenticated using (
+  bucket_id = 'project-files'
+  and public.is_teacher()
+  and (storage.foldername(name))[1] = 'teacher'
+  and (storage.foldername(name))[2] = auth.uid()::text
+);
 create policy "students_read_assigned_project_files" on storage.objects
 for select to authenticated using (
   bucket_id = 'project-files'
@@ -365,4 +372,11 @@ for select to authenticated using (
       and public.teaches_class(s.class_id)
     )
   )
+);
+create policy "students_delete_own_submissions" on storage.objects
+for delete to authenticated using (
+  bucket_id = 'student-submissions'
+  and public.is_student_profile(auth.uid())
+  and (storage.foldername(name))[1] = 'student'
+  and (storage.foldername(name))[2] = auth.uid()::text
 );
