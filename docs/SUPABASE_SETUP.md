@@ -1,19 +1,18 @@
 # RoboEduc Game Lab — configuração do ambiente
 
-## 1. Banco de dados
+## Banco de dados e armazenamento
 
-1. Crie um projeto Supabase na região **South America (São Paulo)**.
-2. Execute todo o conteúdo de `supabase/schema.sql` no SQL Editor.
-3. Em Project Settings → API, copie a Project URL, a chave publicável e a chave `service_role`.
+O projeto Supabase já foi criado na região South America (São Paulo), com as tabelas, políticas RLS e buckets privados aplicados.
 
-## 2. Conta inicial do professor
+## Criar a conta inicial do professor
 
-A primeira conta é criada diretamente no painel do Supabase.
+Esta é a única etapa que precisa ser feita no painel do Supabase, porque a criação de uma credencial administrativa exige que o responsável defina a senha.
 
-1. Abra Authentication → Users → Add user.
-2. Crie o usuário com o e-mail `roboeduc@roboeduc.local` e defina a senha administrativa diretamente no painel.
-3. Confirme a conta.
-4. No SQL Editor, execute:
+1. Abra o projeto `roboeduc-game-lab` no Supabase.
+2. Entre em **Authentication → Users → Add user**.
+3. Use o e-mail interno `roboeduc@roboeduc.local`.
+4. Defina a senha que será usada para o login `ROBOEDUC` e marque a conta como confirmada.
+5. No **SQL Editor**, execute:
 
 ```sql
 update public.profiles
@@ -21,32 +20,32 @@ set username = 'ROBOEDUC',
     display_name = 'Administrador RoboEduc',
     role = 'teacher'
 where id = (
-  select id from auth.users
+  select id
+  from auth.users
   where lower(email) = 'roboeduc@roboeduc.local'
 );
 ```
 
-A role de professor é atribuída somente por essa operação administrativa. Ela não pode ser escolhida no navegador nem alterada pelo próprio usuário.
+O trigger cria todas as contas novas como aluno. A função de professor só pode ser atribuída por uma operação administrativa no banco. Não há cadastro público de professores.
 
-## 3. Variáveis da Vercel
+## Variáveis da Vercel
 
-Configure em Production, Preview e Development:
+As variáveis públicas já foram cadastradas em Production, Preview e Development:
 
 - `NEXT_PUBLIC_SUPABASE_URL`
-- `NEXT_PUBLIC_SUPABASE_ANON_KEY` (pode receber a chave publicável)
-- `SUPABASE_SERVICE_ROLE_KEY` (tipo **Sensitive**, somente servidor)
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY` (chave publicável `sb_publishable_...`)
 
-A chave `service_role` permite operações administrativas. Ela é usada exclusivamente pela rota server-side de criação de alunos e **nunca** deve ser enviada ao navegador, colocada em variável `NEXT_PUBLIC_` ou commitada no GitHub. Depois de salvar as variáveis, faça um novo deploy.
+Não coloque uma chave `service_role` ou `sb_secret` na Vercel nem no navegador. A criação de contas de alunos é feita pela Edge Function protegida do Supabase, que usa o segredo interno do próprio ambiente.
 
-## 4. Contas de alunos
+## Cadastro de alunos
 
-Não existe cadastro público. O professor entra na seção Alunos, escolhe Cadastrar aluno, define nome, usuário, senha inicial e turma. O servidor valida a sessão e a função do professor, cria uma conta Auth com role `student` e vincula a conta à turma selecionada.
+Depois de entrar como `ROBOEDUC`, abra **Alunos → Cadastrar aluno**. O professor define nome, usuário, senha inicial e turma. O servidor valida a sessão, verifica que a conta é professor, cria a conta como aluno e associa o aluno à turma selecionada.
 
-O aluno entra usando o nome de usuário e a senha entregues pelo professor. O usuário `ROBOEDUC` é reservado para a conta administrativa.
+Os alunos entram com o nome de usuário e a senha fornecidos pelo professor.
 
-## 5. Arquivos privados
+## Arquivos
 
-- Projetos: `project-files/teacher/{teacher-id}/{project-id}/{arquivo}.zip`
-- Entregas: `student-submissions/student/{student-id}/{submission-id}/{arquivo}.zip`
+- Projetos: bucket privado `project-files`.
+- Entregas: bucket privado `student-submissions`.
 
-Os buckets são privados. As políticas de Storage e RLS restringem arquivos às contas autorizadas, aos responsáveis pelas turmas e aos alunos vinculados aos projetos.
+As políticas de Storage e RLS restringem os arquivos às contas autorizadas e às turmas correspondentes.
