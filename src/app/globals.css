@@ -190,3 +190,103 @@ td { padding: 13px 16px; border-top: 1px solid #edf0f3; color: #4e5a6b; font-siz
   .brand-icon { width: 31px; height: 31px; }
   .nav-item { font-size: 9px; padding: 7px 6px; }
 }
+
+
+/* RoboEduc institutional visual language */
+:root {
+  --ink: #505867;
+  --muted: #77808d;
+  --line: #e5e8ec;
+  --surface: #ffffff;
+  --canvas: #f8f9fb;
+  --accent: #e8175b;
+  --accent-dark: #c8104d;
+  --accent-soft: #fff0f5;
+  --navy: #51596a;
+  --green: #91c52b;
+  --green-soft: #f1f8e3;
+  --amber: #d99c00;
+  --amber-soft: #fff7df;
+}
+body { background: #fff; color: var(--ink); }
+.brand-wordmark { display: flex; flex-direction: column; justify-content: center; gap: 3px; min-width: 0; }
+.brand-wordmark > b { display: flex; align-items: baseline; font-family: Arial, Helvetica, sans-serif; font-size: 29px; line-height: .95; font-weight: 400; letter-spacing: -2.2px; white-space: nowrap; }
+.brand-wordmark > b span { color: #575160; }
+.brand-wordmark > b i, .brand-wordmark > b em, .brand-wordmark > b strong, .brand-wordmark > b small { font-style: normal; font-weight: 800; }
+.brand-wordmark > b i { color: #e8175b; }
+.brand-wordmark > b em { color: #3997d0; }
+.brand-wordmark > b strong { color: #f2b400; }
+.brand-wordmark > b small { color: #91c52b; font-size: inherit; }
+.brand-subtitle { color: #697382; font-size: 8px; letter-spacing: .01em; white-space: nowrap; }
+.app { display: block; min-height: 100vh; background: #fff; }
+.sidebar { width: 100%; min-height: 86px; height: auto; padding: 12px clamp(14px, 3vw, 42px); border: 0; border-bottom: 1px solid #e8ebef; display: flex; flex-direction: row; align-items: center; gap: clamp(18px, 3vw, 42px); background: #fff; }
+.sidebar .brand-wordmark { flex: 0 0 190px; }
+.account { display: none; }
+.navigation { flex: 1; min-width: 0; display: flex; flex-direction: row; align-items: stretch; gap: 0; }
+.nav-caption { display: none; }
+.nav-item { position: relative; flex: 1 1 0; justify-content: center; gap: 8px; min-height: 54px; padding: 12px 10px; border-radius: 0; color: #fff; font-size: 13px; font-weight: 600; transition: filter .15s, opacity .15s; }
+.nav-item:nth-of-type(1) { background: #efb000; }
+.nav-item:nth-of-type(2) { background: #3997d0; }
+.nav-item:nth-of-type(3) { background: #e8175b; }
+.nav-item:nth-of-type(4) { background: #98c52b; }
+.nav-item:nth-of-type(5) { background: #687382; }
+.nav-item:hover { filter: brightness(.96); background: inherit; }
+.nav-item.active { color: #fff; box-shadow: inset 0 -5px 0 #4d5362aa; background: inherit; }
+.nav-item.active::after { content: ""; position: absolute; inset: 0; background: #0000000a; pointer-events: none; }
+.nav-item i { background: #fff; color: #e8175b; }
+.sidebar-bottom { margin: 0; flex: 0 0 auto; }
+.security-note { display: none; }
+.sidebar-bottom .logout { min-height: 42px; width: 42px; padding: 0; justify-content: center; border: 1px solid var(--line); border-radius: 7px; color: #657080; font-size: 0; }
+.sidebar-bottom .logout svg { width: 18px; height: 18px; }
+.main { min-height: calc(100vh - 86px); }
+.topbar { height: 54px; padding: 0 clamp(16px, 4vw, 54px); background: #fff; border-bottom: 1px solid #edf0f3; }
+.content { max-width: 1320px; padding: 34px clamp(16px, 4vw, 54px) 24px; }
+.kicker { color: #3997d0; }
+.page-heading h1 { color: #505867; }
+.metric, .section-card, .table-card, .data-card { border-radius: 13px; border-color: #e8ebef; box-shadow: 0 3px 14px #26344908; }
+.metric { border-top: 3px solid #3997d0; }
+.metric:nth-child(2) { border-top-color: #e8175b; }
+.metric:nth-child(3) { border-top-color: #efb000; }
+.metric:nth-child(4) { border-top-color: #98c52b; }
+.list-icon { border-radius: 10px; background: #eef6fb; color: #3997d0; }
+.button { border-radius: 9px; }
+.button.primary { background: #e8175b; }
+.button.primary:hover { background: #c8104d; }
+.button.secondary { border-radius: 9px; }
+.login-page { align-items: flex-start; padding-top: clamp(48px, 10vh, 100px); background: linear-gradient(180deg, #fff 0%, #fff 75%, #fafbfd 100%); }
+.login-card { position: relative; max-width: 470px; padding: 40px 38px 30px; border: 1px solid #e7eaee; border-radius: 17px; box-shadow: 0 12px 40px #313c4c0d; overflow: hidden; }
+.login-card::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 6px; background: linear-gradient(90deg, #efb000 0 25%, #3997d0 25% 50%, #e8175b 50% 75%, #98c52b 75% 100%); }
+.login-card > .brand-wordmark { align-items: center; margin: 4px 0 34px; }
+.login-card .brand-wordmark > b { font-size: 48px; letter-spacing: -3.6px; }
+.login-card .brand-subtitle { font-size: 11px; }
+.login-copy { margin: 0 0 27px; text-align: center; }
+.login-copy .kicker { letter-spacing: .08em; }
+.login-copy h1 { color: #515867; font-size: 31px; }
+.login-copy p { font-size: 13px; }
+.login-foot { font-size: 10px; }
+.modal { border-radius: 15px; }
+.modal-close { border-radius: 9px; }
+.toast { border-radius: 10px; }
+@media (max-width: 760px) {
+  .sidebar { position: sticky; top: 0; z-index: 10; width: 100%; min-height: 72px; height: auto; padding: 8px 10px; gap: 10px; flex-wrap: nowrap; }
+  .sidebar .brand-wordmark { flex: 0 0 auto; width: 105px; }
+  .sidebar .brand-wordmark > b { font-size: 23px; letter-spacing: -1.8px; }
+  .sidebar .brand-subtitle { font-size: 6px; }
+  .navigation { flex: 1; min-width: 0; flex-direction: row; overflow-x: auto; gap: 2px; scrollbar-width: none; }
+  .navigation::-webkit-scrollbar { display: none; }
+  .nav-item { flex: 0 0 auto; min-height: 43px; padding: 8px 10px; font-size: 10px; gap: 5px; }
+  .nav-item svg { width: 15px; height: 15px; }
+  .sidebar-bottom { display: none; }
+  .main { min-height: calc(100vh - 72px); }
+  .topbar { height: 45px; padding: 0 13px; }
+  .content { padding: 23px 14px 18px; }
+  .login-page { padding: 42px 14px 60px; }
+  .login-card { padding: 35px 23px 25px; }
+  .login-card .brand-wordmark > b { font-size: 43px; }
+}
+@media (max-width: 390px) {
+  .sidebar { gap: 6px; }
+  .sidebar .brand-wordmark { width: 90px; }
+  .sidebar .brand-wordmark > b { font-size: 20px; }
+  .nav-item { padding: 8px 7px; font-size: 9px; }
+}
