@@ -1,7 +1,10 @@
--- RoboEduc Game Lab — production schema
--- Apply once to a new Supabase project. All data and files remain private.
+-- RoboEduc Game Lab — initial production schema
+-- All student data and project files are private by default.
 
 create extension if not exists pgcrypto;
+create schema if not exists private;
+revoke all on schema private from public, anon;
+grant usage on schema private to authenticated;
 
 create type public.account_role as enum ('teacher', 'student');
 create type public.submission_status as enum ('submitted', 'reviewing', 'approved', 'needs_changes');
@@ -86,8 +89,12 @@ create index submissions_student_id_idx on public.submissions(student_id);
 create index submissions_class_id_idx on public.submissions(class_id);
 create index submissions_project_id_idx on public.submissions(project_id);
 
-create or replace function public.set_updated_at()
-returns trigger language plpgsql as $$
+-- Internal helper functions live in a non-exposed schema.
+create or replace function private.set_updated_at()
+returns trigger
+language plpgsql
+set search_path = ''
+as $$
 begin
   new.updated_at = now();
   return new;
@@ -95,28 +102,27 @@ end;
 $$;
 
 create trigger profiles_updated_at before update on public.profiles
-for each row execute function public.set_updated_at();
+for each row execute function private.set_updated_at();
 create trigger classes_updated_at before update on public.classes
-for each row execute function public.set_updated_at();
+for each row execute function private.set_updated_at();
 create trigger projects_updated_at before update on public.projects
-for each row execute function public.set_updated_at();
+for each row execute function private.set_updated_at();
 create trigger submissions_updated_at before update on public.submissions
-for each row execute function public.set_updated_at();
+for each row execute function private.set_updated_at();
 
--- Every newly provisioned Auth user starts as a student.
--- The first teacher's role is elevated manually in the trusted SQL editor.
-create or replace function public.handle_new_user()
+-- Every new Auth user receives a student profile. Teacher promotion is administrative only.
+create or replace function private.handle_new_user()
 returns trigger
 language plpgsql
 security definer
-set search_path = public
+set search_path = ''
 as $$
 declare
   new_username text;
 begin
   new_username := coalesce(
     nullif(new.raw_user_meta_data ->> 'username', ''),
-    split_part(new.email, '@', 1)
+    split_part(coalesce(new.email, ''), '@', 1)
   );
   insert into public.profiles (id, username, display_name, role)
   values (
@@ -132,77 +138,105 @@ $$;
 
 create trigger on_auth_user_created
 after insert on auth.users
-for each row execute function public.handle_new_user();
+for each row execute function private.handle_new_user();
 
--- SECURITY DEFINER helpers prevent recursive RLS checks on membership and profile data.
-create or replace function public.is_teacher()
-returns boolean language sql stable security definer set search_path = public as $$
+create or replace function private.is_teacher()
+returns boolean
+language sql stable security definer
+set search_path = ''
+as $$
   select exists (
     select 1 from public.profiles p
-    where p.id = auth.uid() and p.role = 'teacher'
+    where p.id = (select auth.uid()) and p.role = 'teacher'
   );
 $$;
 
-create or replace function public.teaches_class(target_class uuid)
-returns boolean language sql stable security definer set search_path = public as $$
+create or replace function private.teaches_class(target_class uuid)
+returns boolean
+language sql stable security definer
+set search_path = ''
+as $$
   select exists (
     select 1 from public.classes c
-    where c.id = target_class and c.teacher_id = auth.uid()
+    where c.id = target_class and c.teacher_id = (select auth.uid())
   );
 $$;
 
-create or replace function public.is_class_member(target_class uuid)
-returns boolean language sql stable security definer set search_path = public as $$
+create or replace function private.is_class_member(target_class uuid)
+returns boolean
+language sql stable security definer
+set search_path = ''
+as $$
   select exists (
     select 1 from public.class_members cm
-    where cm.class_id = target_class and cm.student_id = auth.uid()
+    where cm.class_id = target_class and cm.student_id = (select auth.uid())
   );
 $$;
 
-create or replace function public.is_student_profile(target_user uuid)
-returns boolean language sql stable security definer set search_path = public as $$
+create or replace function private.is_student_profile(target_user uuid)
+returns boolean
+language sql stable security definer
+set search_path = ''
+as $$
   select exists (
     select 1 from public.profiles p
     where p.id = target_user and p.role = 'student'
   );
 $$;
 
-create or replace function public.join_class_by_code(entered_code text)
+create or replace function private.join_class_by_code(entered_code text)
 returns uuid
 language plpgsql
 security definer
-set search_path = public
-as $
+set search_path = ''
+as $$
 declare
   target_class_id uuid;
 begin
-  if auth.uid() is null then
+  if (select auth.uid()) is null then
     raise exception 'Faça login para entrar em uma turma.';
   end if;
-
-  if not public.is_student_profile(auth.uid()) then
+  if not private.is_student_profile((select auth.uid())) then
     raise exception 'Somente contas de aluno podem entrar em turmas.';
   end if;
 
-  select id
-  into target_class_id
+  select id into target_class_id
   from public.classes
-  where access_code = upper(trim(entered_code))
-    and is_active = true;
+  where access_code = upper(trim(entered_code)) and is_active = true;
 
   if target_class_id is null then
     raise exception 'Código de turma inválido ou turma inativa.';
   end if;
 
   insert into public.class_members (class_id, student_id)
-  values (target_class_id, auth.uid())
+  values (target_class_id, (select auth.uid()))
   on conflict (class_id, student_id) do nothing;
 
   return target_class_id;
 end;
-$;
+$$;
 
-revoke all on function public.join_class_by_code(text) from public;
+revoke all on function private.is_teacher() from public, anon;
+revoke all on function private.teaches_class(uuid) from public, anon;
+revoke all on function private.is_class_member(uuid) from public, anon;
+revoke all on function private.is_student_profile(uuid) from public, anon;
+revoke all on function private.join_class_by_code(text) from public, anon;
+grant execute on function private.is_teacher() to authenticated;
+grant execute on function private.teaches_class(uuid) to authenticated;
+grant execute on function private.is_class_member(uuid) to authenticated;
+grant execute on function private.is_student_profile(uuid) to authenticated;
+grant execute on function private.join_class_by_code(text) to authenticated;
+
+-- Public RPC is SECURITY INVOKER; the checked operation is isolated in private schema.
+create or replace function public.join_class_by_code(entered_code text)
+returns uuid
+language sql
+security invoker
+set search_path = ''
+as $$
+  select private.join_class_by_code(entered_code);
+$$;
+revoke all on function public.join_class_by_code(text) from public, anon;
 grant execute on function public.join_class_by_code(text) to authenticated;
 
 alter table public.profiles enable row level security;
@@ -213,134 +247,159 @@ alter table public.project_assignments enable row level security;
 alter table public.submissions enable row level security;
 alter table public.submission_feedback enable row level security;
 
+grant usage on schema public to authenticated;
+grant select, insert, update, delete on
+  public.profiles, public.classes, public.class_members, public.projects,
+  public.project_assignments, public.submissions, public.submission_feedback
+to authenticated;
+revoke update on public.profiles from authenticated;
+grant update (username, display_name) on public.profiles to authenticated;
+revoke update on public.submissions from authenticated;
+grant update (status) on public.submissions to authenticated;
+
 create policy "profiles_read_self_or_teacher_roster" on public.profiles
 for select to authenticated using (
-  id = auth.uid()
+  id = (select auth.uid())
   or exists (
     select 1
     from public.class_members cm
     join public.classes c on c.id = cm.class_id
-    where cm.student_id = profiles.id and c.teacher_id = auth.uid()
+    where cm.student_id = profiles.id and c.teacher_id = (select auth.uid())
   )
 );
 create policy "profiles_update_self" on public.profiles
-for update to authenticated using (id = auth.uid()) with check (id = auth.uid());
-revoke update on public.profiles from authenticated;
-grant update (username, display_name) on public.profiles to authenticated;
--- The role column can only be changed by trusted server/admin operations.
+for update to authenticated using (id = (select auth.uid()))
+with check (id = (select auth.uid()));
 
 create policy "classes_read_teacher_or_member" on public.classes
-for select to authenticated using (teacher_id = auth.uid() or public.is_class_member(id));
+for select to authenticated using (
+  teacher_id = (select auth.uid()) or (select private.is_class_member(id))
+);
 create policy "classes_insert_teacher" on public.classes
-for insert to authenticated with check (teacher_id = auth.uid() and public.is_teacher());
+for insert to authenticated with check (
+  teacher_id = (select auth.uid()) and (select private.is_teacher())
+);
 create policy "classes_update_teacher" on public.classes
-for update to authenticated using (teacher_id = auth.uid()) with check (teacher_id = auth.uid());
+for update to authenticated using (teacher_id = (select auth.uid()))
+with check (teacher_id = (select auth.uid()));
 create policy "classes_delete_teacher" on public.classes
-for delete to authenticated using (teacher_id = auth.uid());
+for delete to authenticated using (teacher_id = (select auth.uid()));
 
 create policy "class_members_read_teacher_or_student" on public.class_members
-for select to authenticated using (student_id = auth.uid() or public.teaches_class(class_id));
+for select to authenticated using (
+  student_id = (select auth.uid()) or (select private.teaches_class(class_id))
+);
 create policy "class_members_manage_teacher" on public.class_members
 for all to authenticated
-using (public.teaches_class(class_id))
-with check (public.teaches_class(class_id) and public.is_student_profile(student_id));
+using ((select private.teaches_class(class_id)))
+with check (
+  (select private.teaches_class(class_id))
+  and (select private.is_student_profile(student_id))
+);
 
 create policy "projects_read_creator_or_assigned_student" on public.projects
 for select to authenticated using (
-  created_by = auth.uid()
+  created_by = (select auth.uid())
   or exists (
     select 1 from public.project_assignments pa
     join public.class_members cm on cm.class_id = pa.class_id
-    where pa.project_id = projects.id and cm.student_id = auth.uid()
+    where pa.project_id = projects.id and cm.student_id = (select auth.uid())
   )
 );
 create policy "projects_insert_teacher" on public.projects
-for insert to authenticated with check (created_by = auth.uid() and public.is_teacher());
+for insert to authenticated with check (
+  created_by = (select auth.uid()) and (select private.is_teacher())
+);
 create policy "projects_update_creator" on public.projects
-for update to authenticated using (created_by = auth.uid()) with check (created_by = auth.uid());
+for update to authenticated using (created_by = (select auth.uid()))
+with check (created_by = (select auth.uid()));
 create policy "projects_delete_creator" on public.projects
-for delete to authenticated using (created_by = auth.uid());
+for delete to authenticated using (created_by = (select auth.uid()));
 
 create policy "assignments_read_teacher_or_class_member" on public.project_assignments
-for select to authenticated using (public.teaches_class(class_id) or public.is_class_member(class_id));
+for select to authenticated using (
+  (select private.teaches_class(class_id)) or (select private.is_class_member(class_id))
+);
 create policy "assignments_manage_teacher" on public.project_assignments
 for all to authenticated
 using (
-  public.teaches_class(class_id)
+  (select private.teaches_class(class_id))
   and exists (
     select 1 from public.projects p
-    where p.id = project_assignments.project_id and p.created_by = auth.uid()
+    where p.id = project_assignments.project_id and p.created_by = (select auth.uid())
   )
 )
 with check (
-  public.teaches_class(class_id)
+  (select private.teaches_class(class_id))
   and exists (
     select 1 from public.projects p
-    where p.id = project_assignments.project_id and p.created_by = auth.uid()
+    where p.id = project_assignments.project_id and p.created_by = (select auth.uid())
   )
 );
 
 create policy "submissions_read_owner_or_teacher" on public.submissions
-for select to authenticated using (student_id = auth.uid() or public.teaches_class(class_id));
+for select to authenticated using (
+  student_id = (select auth.uid()) or (select private.teaches_class(class_id))
+);
 create policy "submissions_insert_student" on public.submissions
 for insert to authenticated with check (
-  student_id = auth.uid()
-  and public.is_class_member(class_id)
+  student_id = (select auth.uid())
+  and (select private.is_class_member(class_id))
   and exists (
     select 1 from public.project_assignments pa
     where pa.project_id = submissions.project_id and pa.class_id = submissions.class_id
   )
 );
 create policy "submissions_update_teacher" on public.submissions
-for update to authenticated using (public.teaches_class(class_id))
-with check (public.teaches_class(class_id));
-revoke update on public.submissions from authenticated;
-grant update (status) on public.submissions to authenticated;
+for update to authenticated using ((select private.teaches_class(class_id)))
+with check ((select private.teaches_class(class_id)));
 
 create policy "feedback_read_student_or_teacher" on public.submission_feedback
 for select to authenticated using (
-  teacher_id = auth.uid()
+  teacher_id = (select auth.uid())
   or exists (
     select 1 from public.submissions s
-    where s.id = submission_id and s.student_id = auth.uid()
+    where s.id = submission_id and s.student_id = (select auth.uid())
   )
 );
 create policy "feedback_insert_teacher" on public.submission_feedback
 for insert to authenticated with check (
-  teacher_id = auth.uid()
+  teacher_id = (select auth.uid())
   and exists (
     select 1 from public.submissions s
-    where s.id = submission_id and public.teaches_class(s.class_id)
+    where s.id = submission_id and (select private.teaches_class(s.class_id))
   )
 );
 
--- Private buckets. No public URL access is enabled.
+-- Private Storage buckets. All object access is controlled by RLS policies.
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values
-  ('project-files', 'project-files', false, 104857600, array['application/zip','application/x-zip-compressed','application/octet-stream']),
-  ('student-submissions', 'student-submissions', false, 104857600, array['application/zip','application/x-zip-compressed','application/octet-stream'])
+  ('project-files', 'project-files', false, 104857600,
+    array['application/zip','application/x-zip-compressed','application/octet-stream']),
+  ('student-submissions', 'student-submissions', false, 104857600,
+    array['application/zip','application/x-zip-compressed','application/octet-stream'])
 on conflict (id) do nothing;
 
 create policy "teachers_upload_own_project_files" on storage.objects
 for insert to authenticated with check (
   bucket_id = 'project-files'
-  and public.is_teacher()
+  and (select private.is_teacher())
   and (storage.foldername(name))[1] = 'teacher'
-  and (storage.foldername(name))[2] = auth.uid()::text
+  and (storage.foldername(name))[2] = (select auth.uid())::text
 );
 create policy "teachers_read_own_project_files" on storage.objects
 for select to authenticated using (
   bucket_id = 'project-files'
-  and public.is_teacher()
+  and (select private.is_teacher())
   and (storage.foldername(name))[1] = 'teacher'
-  and (storage.foldername(name))[2] = auth.uid()::text
+  and (storage.foldername(name))[2] = (select auth.uid())::text
 );
 create policy "teachers_delete_own_project_files" on storage.objects
 for delete to authenticated using (
   bucket_id = 'project-files'
-  and public.is_teacher()
+  and (select private.is_teacher())
   and (storage.foldername(name))[1] = 'teacher'
-  and (storage.foldername(name))[2] = auth.uid()::text
+  and (storage.foldername(name))[2] = (select auth.uid())::text
 );
 create policy "students_read_assigned_project_files" on storage.objects
 for select to authenticated using (
@@ -350,33 +409,33 @@ for select to authenticated using (
     from public.projects p
     join public.project_assignments pa on pa.project_id = p.id
     join public.class_members cm on cm.class_id = pa.class_id
-    where p.file_path = storage.objects.name and cm.student_id = auth.uid()
+    where p.file_path = storage.objects.name and cm.student_id = (select auth.uid())
   )
 );
 
 create policy "students_upload_own_submissions" on storage.objects
 for insert to authenticated with check (
   bucket_id = 'student-submissions'
-  and public.is_student_profile(auth.uid())
+  and (select private.is_student_profile((select auth.uid())))
   and (storage.foldername(name))[1] = 'student'
-  and (storage.foldername(name))[2] = auth.uid()::text
+  and (storage.foldername(name))[2] = (select auth.uid())::text
 );
 create policy "students_and_class_teacher_read_submissions" on storage.objects
 for select to authenticated using (
   bucket_id = 'student-submissions'
   and (
-    ((storage.foldername(name))[1] = 'student' and (storage.foldername(name))[2] = auth.uid()::text)
+    ((storage.foldername(name))[1] = 'student' and (storage.foldername(name))[2] = (select auth.uid())::text)
     or exists (
       select 1 from public.submissions s
       where s.id::text = (storage.foldername(name))[3]
-      and public.teaches_class(s.class_id)
+      and (select private.teaches_class(s.class_id))
     )
   )
 );
 create policy "students_delete_own_submissions" on storage.objects
 for delete to authenticated using (
   bucket_id = 'student-submissions'
-  and public.is_student_profile(auth.uid())
+  and (select private.is_student_profile((select auth.uid())))
   and (storage.foldername(name))[1] = 'student'
-  and (storage.foldername(name))[2] = auth.uid()::text
+  and (storage.foldername(name))[2] = (select auth.uid())::text
 );
