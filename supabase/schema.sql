@@ -1,5 +1,5 @@
--- RoboEduc Game Lab — initial database schema
--- Apply in Supabase SQL Editor. All application data is private by default.
+-- RoboEduc Game Lab — production schema
+-- Apply once to a new Supabase project. All data and files remain private.
 
 create extension if not exists pgcrypto;
 
@@ -15,6 +15,7 @@ create table public.profiles (
   updated_at timestamptz not null default now(),
   constraint username_format check (username ~ '^[A-Za-z0-9_.-]{3,32}$')
 );
+create unique index profiles_username_case_insensitive_idx on public.profiles (lower(username));
 
 create table public.classes (
   id uuid primary key default gen_random_uuid(),
@@ -34,7 +35,6 @@ create table public.class_members (
   primary key (class_id, student_id)
 );
 
--- Projects are reusable: one project can be assigned to multiple classes.
 create table public.projects (
   id uuid primary key default gen_random_uuid(),
   created_by uuid not null references public.profiles(id) on delete cascade,
@@ -103,28 +103,69 @@ for each row execute function public.set_updated_at();
 create trigger submissions_updated_at before update on public.submissions
 for each row execute function public.set_updated_at();
 
--- Helper functions avoid repeating role and ownership joins in RLS policies.
+-- Every newly provisioned Auth user starts as a student.
+-- The first teacher's role is elevated manually in the trusted SQL editor.
+create or replace function public.handle_new_user()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  new_username text;
+begin
+  new_username := coalesce(
+    nullif(new.raw_user_meta_data ->> 'username', ''),
+    split_part(new.email, '@', 1)
+  );
+  insert into public.profiles (id, username, display_name, role)
+  values (
+    new.id,
+    new_username,
+    coalesce(nullif(new.raw_user_meta_data ->> 'display_name', ''), new_username),
+    'student'
+  )
+  on conflict (id) do nothing;
+  return new;
+end;
+$$;
+
+create trigger on_auth_user_created
+after insert on auth.users
+for each row execute function public.handle_new_user();
+
+-- SECURITY DEFINER helpers prevent recursive RLS checks on membership and profile data.
 create or replace function public.is_teacher()
 returns boolean language sql stable security definer set search_path = public as $$
-  select exists (select 1 from public.profiles p where p.id = auth.uid() and p.role = 'teacher');
+  select exists (
+    select 1 from public.profiles p
+    where p.id = auth.uid() and p.role = 'teacher'
+  );
 $$;
 
 create or replace function public.teaches_class(target_class uuid)
 returns boolean language sql stable security definer set search_path = public as $$
-  select exists (select 1 from public.classes c where c.id = target_class and c.teacher_id = auth.uid());
+  select exists (
+    select 1 from public.classes c
+    where c.id = target_class and c.teacher_id = auth.uid()
+  );
 $$;
 
 create or replace function public.is_class_member(target_class uuid)
-returns boolean language sql stable security definer set search_path = public as $
-  select exists (select 1 from public.class_members cm where cm.class_id = target_class and cm.student_id = auth.uid());
-$;
+returns boolean language sql stable security definer set search_path = public as $$
+  select exists (
+    select 1 from public.class_members cm
+    where cm.class_id = target_class and cm.student_id = auth.uid()
+  );
+$$;
 
 create or replace function public.is_student_profile(target_user uuid)
-returns boolean language sql stable security definer set search_path = public as $
-  select exists (select 1 from public.profiles p where p.id = target_user and p.role = 'student');
-$;
-
-create unique index profiles_username_case_insensitive_idx on public.profiles (lower(username));
+returns boolean language sql stable security definer set search_path = public as $$
+  select exists (
+    select 1 from public.profiles p
+    where p.id = target_user and p.role = 'student'
+  );
+$$;
 
 alter table public.profiles enable row level security;
 alter table public.classes enable row level security;
@@ -136,18 +177,19 @@ alter table public.submission_feedback enable row level security;
 
 create policy "profiles_read_self_or_teacher_roster" on public.profiles
 for select to authenticated using (
-  id = auth.uid() or exists (
-    select 1 from public.class_members cm
+  id = auth.uid()
+  or exists (
+    select 1
+    from public.class_members cm
     join public.classes c on c.id = cm.class_id
     where cm.student_id = profiles.id and c.teacher_id = auth.uid()
   )
 );
 create policy "profiles_update_self" on public.profiles
 for update to authenticated using (id = auth.uid()) with check (id = auth.uid());
--- Restrict self-service profile edits so users cannot promote themselves to teacher.
 revoke update on public.profiles from authenticated;
 grant update (username, display_name) on public.profiles to authenticated;
--- Role is assigned by trusted server-side provisioning, never by the public signup form.
+-- The role column can only be changed by trusted server/admin operations.
 
 create policy "classes_read_teacher_or_member" on public.classes
 for select to authenticated using (teacher_id = auth.uid() or public.is_class_member(id));
@@ -167,7 +209,8 @@ with check (public.teaches_class(class_id) and public.is_student_profile(student
 
 create policy "projects_read_creator_or_assigned_student" on public.projects
 for select to authenticated using (
-  created_by = auth.uid() or exists (
+  created_by = auth.uid()
+  or exists (
     select 1 from public.project_assignments pa
     join public.class_members cm on cm.class_id = pa.class_id
     where pa.project_id = projects.id and cm.student_id = auth.uid()
@@ -186,11 +229,17 @@ create policy "assignments_manage_teacher" on public.project_assignments
 for all to authenticated
 using (
   public.teaches_class(class_id)
-  and exists (select 1 from public.projects p where p.id = project_assignments.project_id and p.created_by = auth.uid())
+  and exists (
+    select 1 from public.projects p
+    where p.id = project_assignments.project_id and p.created_by = auth.uid()
+  )
 )
 with check (
   public.teaches_class(class_id)
-  and exists (select 1 from public.projects p where p.id = project_assignments.project_id and p.created_by = auth.uid())
+  and exists (
+    select 1 from public.projects p
+    where p.id = project_assignments.project_id and p.created_by = auth.uid()
+  )
 );
 
 create policy "submissions_read_owner_or_teacher" on public.submissions
@@ -199,26 +248,35 @@ create policy "submissions_insert_student" on public.submissions
 for insert to authenticated with check (
   student_id = auth.uid()
   and public.is_class_member(class_id)
-  and exists (select 1 from public.project_assignments pa where pa.project_id = submissions.project_id and pa.class_id = submissions.class_id)
+  and exists (
+    select 1 from public.project_assignments pa
+    where pa.project_id = submissions.project_id and pa.class_id = submissions.class_id
+  )
 );
 create policy "submissions_update_teacher" on public.submissions
 for update to authenticated using (public.teaches_class(class_id))
 with check (public.teaches_class(class_id));
+revoke update on public.submissions from authenticated;
+grant update (status) on public.submissions to authenticated;
 
 create policy "feedback_read_student_or_teacher" on public.submission_feedback
 for select to authenticated using (
-  teacher_id = auth.uid() or exists (
-    select 1 from public.submissions s where s.id = submission_id and s.student_id = auth.uid()
+  teacher_id = auth.uid()
+  or exists (
+    select 1 from public.submissions s
+    where s.id = submission_id and s.student_id = auth.uid()
   )
 );
 create policy "feedback_insert_teacher" on public.submission_feedback
 for insert to authenticated with check (
-  teacher_id = auth.uid() and exists (
-    select 1 from public.submissions s where s.id = submission_id and public.teaches_class(s.class_id)
+  teacher_id = auth.uid()
+  and exists (
+    select 1 from public.submissions s
+    where s.id = submission_id and public.teaches_class(s.class_id)
   )
 );
 
--- Private buckets. Files are never publicly addressable; the app issues short-lived signed URLs.
+-- Private buckets. No public URL access is enabled.
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values
   ('project-files', 'project-files', false, 104857600, array['application/zip','application/x-zip-compressed','application/octet-stream']),
@@ -239,6 +297,18 @@ for select to authenticated using (
   and (storage.foldername(name))[1] = 'teacher'
   and (storage.foldername(name))[2] = auth.uid()::text
 );
+create policy "students_read_assigned_project_files" on storage.objects
+for select to authenticated using (
+  bucket_id = 'project-files'
+  and exists (
+    select 1
+    from public.projects p
+    join public.project_assignments pa on pa.project_id = p.id
+    join public.class_members cm on cm.class_id = pa.class_id
+    where p.file_path = storage.objects.name and cm.student_id = auth.uid()
+  )
+);
+
 create policy "students_upload_own_submissions" on storage.objects
 for insert to authenticated with check (
   bucket_id = 'student-submissions'
