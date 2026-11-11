@@ -16,6 +16,7 @@ type SchoolClass = { id: string; name: string; access_code: string; description:
 type Project = { id: string; code: string; title: string; description: string; difficulty: string; file_path: string | null; created_at: string };
 type Student = { id: string; username: string; display_name: string };
 type Assignment = { project_id: string; class_id: string };
+type Membership = { student_id: string; class_id: string };
 type Submission = {
   id: string; project_id: string; class_id: string; student_id: string; file_path: string;
   original_filename: string; status: "submitted" | "reviewing" | "approved" | "needs_changes"; submitted_at: string;
@@ -49,6 +50,7 @@ export default function Home() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
   const [assignments, setAssignments] = useState<Assignment[]>([]);
+  const [memberships, setMemberships] = useState<Membership[]>([]);
   const [submissions, setSubmissions] = useState<Submission[]>([]);
   const [search, setSearch] = useState("");
   const [modal, setModal] = useState<"class" | "project" | "student" | "submission" | null>(null);
@@ -104,6 +106,7 @@ export default function Home() {
         setStudents([]);
         setAssignments([]);
         setSubmissions([]);
+        setMemberships([]);
       }
     });
     return () => {
@@ -127,7 +130,7 @@ export default function Home() {
         const [projectResult, memberResult, assignmentResult, submissionResult] = await Promise.all([
           db.from("projects").select("id,code,title,description,difficulty,file_path,created_at")
             .eq("created_by", current.id).order("created_at", { ascending: false }),
-          classIds.length ? db.from("class_members").select("student_id").in("class_id", classIds) : Promise.resolve({ data: [], error: null }),
+          classIds.length ? db.from("class_members").select("student_id,class_id").in("class_id", classIds) : Promise.resolve({ data: [], error: null }),
           classIds.length ? db.from("project_assignments").select("project_id,class_id").in("class_id", classIds) : Promise.resolve({ data: [], error: null }),
           classIds.length ? db.from("submissions").select("*").in("class_id", classIds).order("submitted_at", { ascending: false }) : Promise.resolve({ data: [], error: null }),
         ]);
@@ -146,6 +149,7 @@ export default function Home() {
         setProjects((projectResult.data || []) as Project[]);
         setStudents((studentRows || []) as Student[]);
         setAssignments((assignmentResult.data || []) as Assignment[]);
+        setMemberships((memberResult.data || []) as Membership[]);
         setSubmissions((submissionResult.data || []) as Submission[]);
       } else {
         const { data: memberRows, error: memberError } = await db.from("class_members")
@@ -168,6 +172,7 @@ export default function Home() {
         if (projectError) throw projectError;
         setClasses((classResult.data || []) as SchoolClass[]);
         setAssignments(assignmentRows);
+        setMemberships((memberRows || []) as Membership[]);
         setProjects((projectRows || []) as Project[]);
         setSubmissions((submissionResult.data || []) as Submission[]);
         setStudents([]);
@@ -383,10 +388,6 @@ export default function Home() {
     return projects.filter(project => !term || [project.title, project.code, project.description].join(" ").toLowerCase().includes(term));
   }, [projects, search]);
 
-  const memberCount = (classId: string) => students.filter(student =>
-    assignments.some(a => a.class_id === classId) ? true : false
-  ).length;
-
   if (checkingAuth) return <main className="auth-loading"><LoaderCircle className="spin" size={24}/> Carregando sessão...</main>;
 
   if (!profile) return (
@@ -479,7 +480,7 @@ export default function Home() {
                 <section className="section-card">
                   <div className="section-title"><div><h2>{profile.role === "teacher" ? "Suas turmas" : "Projetos atribuídos"}</h2><p>{profile.role === "teacher" ? "Turmas que você criou." : "Atividades disponíveis para sua conta."}</p></div><button className="text-action" onClick={() => setTab(profile.role === "teacher" ? "classes" : "projects")}>Ver todos <ArrowRight size={15}/></button></div>
                   {profile.role === "teacher"
-                    ? classes.length ? <div className="simple-list">{classes.slice(0, 4).map(item => <div className="list-row" key={item.id}><span className="list-icon"><Users size={17}/></span><div className="list-main"><b>{item.name}</b><small>Código {item.access_code}</small></div><button className="icon-button" title="Copiar código" onClick={() => copyCode(item.access_code)}><Copy size={15}/></button></div>)}</div>
+                    ? classes.length ? <div className="simple-list">{classes.slice(0, 4).map(item => <div className="list-row" key={item.id}><span className="list-icon"><Users size={17}/></span><div className="list-main"><b>{item.name}</b><small>Código {item.access_code} · {memberships.filter(m => m.class_id === item.id).length} aluno(s)</small></div><button className="icon-button" title="Copiar código" onClick={() => copyCode(item.access_code)}><Copy size={15}/></button></div>)}</div>
                       : <EmptyState text="Você ainda não criou nenhuma turma." action="Criar primeira turma" onClick={() => setModal("class")}/>
                     : projects.length ? <div className="simple-list">{assignedProjects.slice(0,4).map(item => <div className="list-row" key={item.id}><span className="list-icon"><Gamepad2 size={17}/></span><div className="list-main"><b>{item.title}</b><small>{item.code} · {item.difficulty}</small></div><button className="icon-button" title="Abrir projetos" onClick={() => setTab("projects")}><ArrowRight size={15}/></button></div>)}</div>
                       : <EmptyState text="Sua turma ainda não recebeu projetos." action="Atualizar" onClick={() => refresh()}/>}
@@ -524,7 +525,7 @@ export default function Home() {
           {tab === "students" && profile.role === "teacher" && (
             <>
               <div className="page-heading"><div><span className="kicker">CONTAS E ACESSO</span><h1>Alunos</h1><p>Cadastre usuários e vincule cada conta a uma turma.</p></div><button className="button primary" onClick={() => setModal("student")} disabled={!classes.length}><Plus size={17}/> Cadastrar aluno</button></div>
-              {students.length ? <div className="table-card"><div className="table-heading"><b>{students.length} aluno(s)</b><span>Contas reais cadastradas</span></div><div className="table-scroll"><table><thead><tr><th>ALUNO</th><th>USUÁRIO</th><th>TURMA(S)</th></tr></thead><tbody>{students.map(student => <tr key={student.id}><td><div className="person"><span className="avatar">{student.display_name.slice(0,1).toUpperCase()}</span><b>{student.display_name}</b></div></td><td>{student.username}</td><td>{classes.filter(c => assignments.some(a => a.class_id === c.id)).map(c => c.name).join(", ") || "—"}</td></tr>)}</tbody></table></div></div> : <EmptyState text={classes.length ? "Ainda não há alunos cadastrados nas suas turmas." : "Crie uma turma antes de cadastrar alunos."} action={classes.length ? "Cadastrar primeiro aluno" : "Criar turma"} onClick={() => setModal(classes.length ? "student" : "class")}/>}
+              {students.length ? <div className="table-card"><div className="table-heading"><b>{students.length} aluno(s)</b><span>Contas reais cadastradas</span></div><div className="table-scroll"><table><thead><tr><th>ALUNO</th><th>USUÁRIO</th><th>TURMA(S)</th></tr></thead><tbody>{students.map(student => <tr key={student.id}><td><div className="person"><span className="avatar">{student.display_name.slice(0,1).toUpperCase()}</span><b>{student.display_name}</b></div></td><td>{student.username}</td><td>{classes.filter(c => memberships.some(m => m.class_id === c.id && m.student_id === student.id)).map(c => c.name).join(", ") || "—"}</td></tr>)}</tbody></table></div></div> : <EmptyState text={classes.length ? "Ainda não há alunos cadastrados nas suas turmas." : "Crie uma turma antes de cadastrar alunos."} action={classes.length ? "Cadastrar primeiro aluno" : "Criar turma"} onClick={() => setModal(classes.length ? "student" : "class")}/>}
             </>
           )}
 
