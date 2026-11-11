@@ -418,7 +418,7 @@ export default function Home() {
   if (!profile) return (
     <main className="login-page">
       <section className="login-card">
-        <div className="brand"><span className="brand-icon"><Gamepad2 size={23}/></span><div><b>RoboEduc</b><small>Game Lab</small></div></div>
+        <div className="brand-wordmark" aria-label="RoboEduc Game Lab"><b><span>ROBO</span><i>E</i><em>D</em><strong>U</strong><small>C</small></b><span className="brand-subtitle">Escola de Programação e Robótica</span></div>
         <div className="login-copy">
           <span className="kicker">PLATAFORMA DE PROJETOS</span>
           <h1>Aprender criando.</h1>
@@ -458,7 +458,7 @@ export default function Home() {
   return (
     <main className="app">
       <aside className="sidebar">
-        <div className="brand"><span className="brand-icon"><Gamepad2 size={22}/></span><div><b>RoboEduc</b><small>Game Lab</small></div></div>
+        <div className="brand-wordmark" aria-label="RoboEduc Game Lab"><b><span>ROBO</span><i>E</i><em>D</em><strong>U</strong><small>C</small></b><span className="brand-subtitle">Escola de Programação e Robótica</span></div>
         <div className="account">
           <span className="avatar">{profile.display_name.slice(0, 1).toUpperCase()}</span>
           <div><b>{profile.display_name}</b><small>{profile.role === "teacher" ? "Professor" : "Aluno"}</small></div>
