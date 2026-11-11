@@ -388,7 +388,7 @@ export default function Home() {
     const { data, error } = await db.storage.from(bucket).createSignedUrl(path, 60);
     setBusy("");
     if (error || !data?.signedUrl) return notify("Não foi possível gerar o link do arquivo.");
-    window.open(data.signedUrl, "_blank", "noopener,noreferrer");
+    window.location.assign(data.signedUrl);
   }
 
   async function updateSubmission(id: string, status: Submission["status"]) {
@@ -512,6 +512,7 @@ export default function Home() {
           <div className="topbar-actions">
             <button className="icon-button" aria-label="Atualizar dados" onClick={() => refresh()} disabled={loading}><RefreshCw size={17} className={loading ? "spin" : ""}/></button>
             <span className="top-name">{profile.display_name}</span>
+            <button className="icon-button" aria-label="Sair da conta" title="Sair da conta" onClick={signOut}><LogOut size={17}/></button>
           </div>
         </header>
 
