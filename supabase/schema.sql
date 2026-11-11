@@ -137,6 +137,9 @@ for select to authenticated using (
 );
 create policy "profiles_update_self" on public.profiles
 for update to authenticated using (id = auth.uid()) with check (id = auth.uid());
+-- Restrict self-service profile edits so users cannot promote themselves to teacher.
+revoke update on public.profiles from authenticated;
+grant update (username, display_name) on public.profiles to authenticated;
 -- Role is assigned by trusted server-side provisioning, never by the public signup form.
 
 create policy "classes_read_teacher_or_member" on public.classes
@@ -171,7 +174,15 @@ for delete to authenticated using (created_by = auth.uid());
 create policy "assignments_read_teacher_or_class_member" on public.project_assignments
 for select to authenticated using (public.teaches_class(class_id) or public.is_class_member(class_id));
 create policy "assignments_manage_teacher" on public.project_assignments
-for all to authenticated using (public.teaches_class(class_id)) with check (public.teaches_class(class_id));
+for all to authenticated
+using (
+  public.teaches_class(class_id)
+  and exists (select 1 from public.projects p where p.id = project_assignments.project_id and p.created_by = auth.uid())
+)
+with check (
+  public.teaches_class(class_id)
+  and exists (select 1 from public.projects p where p.id = project_assignments.project_id and p.created_by = auth.uid())
+);
 
 create policy "submissions_read_owner_or_teacher" on public.submissions
 for select to authenticated using (student_id = auth.uid() or public.teaches_class(class_id));
@@ -181,9 +192,9 @@ for insert to authenticated with check (
   and public.is_class_member(class_id)
   and exists (select 1 from public.project_assignments pa where pa.project_id = submissions.project_id and pa.class_id = submissions.class_id)
 );
-create policy "submissions_update_student_or_teacher" on public.submissions
-for update to authenticated using (student_id = auth.uid() or public.teaches_class(class_id))
-with check (student_id = auth.uid() or public.teaches_class(class_id));
+create policy "submissions_update_teacher" on public.submissions
+for update to authenticated using (public.teaches_class(class_id))
+with check (public.teaches_class(class_id));
 
 create policy "feedback_read_student_or_teacher" on public.submission_feedback
 for select to authenticated using (
