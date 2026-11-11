@@ -54,12 +54,11 @@ export default function Home() {
   const [memberships, setMemberships] = useState<Membership[]>([]);
   const [submissions, setSubmissions] = useState<Submission[]>([]);
   const [search, setSearch] = useState("");
-  const [modal, setModal] = useState<"class" | "project" | "submission" | "join" | null>(null);
-  const [showSignup, setShowSignup] = useState(false);
-  const [signupName, setSignupName] = useState("");
-  const [signupUsername, setSignupUsername] = useState("");
-  const [signupPassword, setSignupPassword] = useState("");
-  const [signupClassCode, setSignupClassCode] = useState("");
+  const [modal, setModal] = useState<"class" | "project" | "student" | "submission" | "join" | null>(null);
+  const [studentName, setStudentName] = useState("");
+  const [studentUsername, setStudentUsername] = useState("");
+  const [studentPassword, setStudentPassword] = useState("");
+  const [studentClass, setStudentClass] = useState("");
   const [className, setClassName] = useState("");
   const [classDescription, setClassDescription] = useState("");
   const [projectTitle, setProjectTitle] = useState("");
@@ -287,50 +286,38 @@ export default function Home() {
     await refresh(profile);
   }
 
-  async function studentSignUp(event: FormEvent<HTMLFormElement>) {
+  async function createStudent(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!db) return;
-    const cleanUsername = signupUsername.trim();
-    if (cleanUsername.toLowerCase() === "roboeduc") return notify("Esse nome de usuário é reservado.");
+    if (!db || profile?.role !== "teacher") return;
+    const cleanUsername = studentUsername.trim();
+    if (cleanUsername.toLowerCase() === "roboeduc") return notify("Esse usuário é reservado.");
     if (!/^[A-Za-z0-9_.-]{3,32}$/.test(cleanUsername)) return notify("Use de 3 a 32 letras, números, ponto, hífen ou sublinhado.");
-    if (signupPassword.length < 8) return notify("A senha deve ter pelo menos 8 caracteres.");
-    setBusy("signup");
-    const { data, error } = await db.auth.signUp({
-      email: usernameToEmail(cleanUsername),
-      password: signupPassword,
-      options: { data: { username: cleanUsername, display_name: signupName.trim() } },
+    if (studentPassword.length < 8) return notify("A senha inicial deve ter pelo menos 8 caracteres.");
+    if (!studentClass) return notify("Selecione a turma do aluno.");
+    const { data: sessionData } = await db.auth.getSession();
+    const token = sessionData.session?.access_token;
+    if (!token) return notify("Sua sessão expirou. Entre novamente.");
+    setBusy("student");
+    const response = await fetch("/api/students", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
+      body: JSON.stringify({
+        username: cleanUsername,
+        displayName: studentName.trim(),
+        password: studentPassword,
+        classId: studentClass,
+      }),
     });
-    if (error || !data.user) {
-      setBusy("");
-      return notify(error?.message || "Não foi possível criar a conta.");
-    }
-    if (!data.session) {
-      setBusy("");
-      return notify("A conta foi registrada, mas o Supabase ainda exige confirmação por e-mail. O administrador precisa desativar essa confirmação para contas de usuário.");
-    }
-    const { data: profileData, error: profileError } = await db.from("profiles")
-      .select("id,username,display_name,role").eq("id", data.user.id).maybeSingle();
-    if (profileError || !profileData || profileData.role !== "student") {
-      await db.auth.signOut();
-      setBusy("");
-      return notify("Não foi possível configurar a conta de aluno.");
-    }
-    const { error: joinError } = await db.rpc("join_class_by_code", {
-      entered_code: signupClassCode.trim().toUpperCase(),
-    });
+    const result = await response.json().catch(() => ({}));
     setBusy("");
-    setSignupPassword("");
-    setProfile(profileData as Profile);
-    setShowSignup(false);
-    setTab("overview");
-    if (joinError) {
-      notify("Conta criada. Não foi possível vincular o código informado; entre em Turmas para tentar novamente.");
-    } else {
-      setSignupName("");
-      setSignupUsername("");
-      setSignupClassCode("");
-      notify("Conta criada e vinculada à turma.");
-    }
+    if (!response.ok) return notify(result.error || "Não foi possível cadastrar o aluno.");
+    setStudentName("");
+    setStudentUsername("");
+    setStudentPassword("");
+    setStudentClass("");
+    setModal(null);
+    notify("Conta de aluno criada e vinculada à turma.");
+    await refresh(profile);
   }
 
   async function joinClass(event: FormEvent<HTMLFormElement>) {
@@ -439,19 +426,6 @@ export default function Home() {
         </div>
         {!db ? (
           <div className="setup-warning"><CircleAlert size={20}/><div><b>Banco de dados ainda não configurado</b><p>O endereço e a chave pública do Supabase precisam ser adicionados às variáveis de ambiente da publicação.</p></div></div>
-        ) : showSignup ? (
-          <form className="form-stack" onSubmit={studentSignUp}>
-            <label htmlFor="signup-name">Nome completo</label>
-            <input id="signup-name" required maxLength={80} value={signupName} onChange={e => setSignupName(e.target.value)} placeholder="Seu nome"/>
-            <label htmlFor="signup-username">Nome de usuário</label>
-            <input id="signup-username" required minLength={3} maxLength={32} pattern="[A-Za-z0-9_.-]+" value={signupUsername} onChange={e => setSignupUsername(e.target.value)} placeholder="Crie um usuário"/>
-            <label htmlFor="signup-password">Senha</label>
-            <input id="signup-password" required minLength={8} maxLength={72} type="password" value={signupPassword} onChange={e => setSignupPassword(e.target.value)} placeholder="Mínimo de 8 caracteres"/>
-            <label htmlFor="signup-code">Código da turma</label>
-            <input id="signup-code" required value={signupClassCode} onChange={e => setSignupClassCode(e.target.value)} placeholder="Ex.: RBX-A1B2C3"/>
-            <button className="button primary wide" disabled={busy === "signup"}>{busy === "signup" ? <LoaderCircle className="spin" size={17}/> : null} Criar conta de aluno</button>
-            <button type="button" className="text-action centered" onClick={() => setShowSignup(false)}>Já tenho uma conta</button>
-          </form>
         ) : (
           <form className="form-stack" onSubmit={signIn}>
             <label htmlFor="username">Usuário</label>
@@ -459,7 +433,6 @@ export default function Home() {
             <label htmlFor="password">Senha</label>
             <input id="password" type="password" autoComplete="current-password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Digite sua senha" />
             <button className="button primary wide" disabled={busy === "login"}>{busy === "login" ? <LoaderCircle className="spin" size={17}/> : null} Entrar</button>
-            <button type="button" className="text-action centered" onClick={() => setShowSignup(true)}>Primeiro acesso? Criar conta de aluno</button>
           </form>
         )}
         <div className="login-foot"><ShieldCheck size={16}/> Contas de alunos são criadas pelo professor.</div>
@@ -577,8 +550,8 @@ export default function Home() {
 
           {tab === "students" && profile.role === "teacher" && (
             <>
-              <div className="page-heading"><div><span className="kicker">CONTAS E ACESSO</span><h1>Alunos</h1><p>Alunos entram usando o código compartilhado de uma turma.</p></div><button className="button secondary" onClick={() => setTab("classes")}><Users size={16}/> Ver códigos das turmas</button></div>
-              {students.length ? <div className="table-card"><div className="table-heading"><b>{students.length} aluno(s)</b><span>Contas reais cadastradas</span></div><div className="table-scroll"><table><thead><tr><th>ALUNO</th><th>USUÁRIO</th><th>TURMA(S)</th></tr></thead><tbody>{students.map(student => <tr key={student.id}><td><div className="person"><span className="avatar">{student.display_name.slice(0,1).toUpperCase()}</span><b>{student.display_name}</b></div></td><td>{student.username}</td><td>{classes.filter(c => memberships.some(m => m.class_id === c.id && m.student_id === student.id)).map(c => c.name).join(", ") || "—"}</td></tr>)}</tbody></table></div></div> : <EmptyState text={classes.length ? "Nenhum aluno entrou nas suas turmas ainda. Compartilhe o código de acesso." : "Crie uma turma para começar a receber alunos."} action="Ver turmas" onClick={() => setTab("classes")}/>}
+              <div className="page-heading"><div><span className="kicker">CONTAS E ACESSO</span><h1>Alunos</h1><p>Crie os acessos dos alunos e associe cada um à turma correta.</p></div><button className="button primary" onClick={() => setModal("student")} disabled={!classes.length}><Plus size={17}/> Cadastrar aluno</button></div>
+              {students.length ? <div className="table-card"><div className="table-heading"><b>{students.length} aluno(s)</b><span>Contas reais cadastradas</span></div><div className="table-scroll"><table><thead><tr><th>ALUNO</th><th>USUÁRIO</th><th>TURMA(S)</th></tr></thead><tbody>{students.map(student => <tr key={student.id}><td><div className="person"><span className="avatar">{student.display_name.slice(0,1).toUpperCase()}</span><b>{student.display_name}</b></div></td><td>{student.username}</td><td>{classes.filter(c => memberships.some(m => m.class_id === c.id && m.student_id === student.id)).map(c => c.name).join(", ") || "—"}</td></tr>)}</tbody></table></div></div> : <EmptyState text={classes.length ? "Nenhum aluno cadastrado nas suas turmas." : "Crie uma turma antes de cadastrar alunos."} action={classes.length ? "Cadastrar aluno" : "Criar turma"} onClick={() => setModal(classes.length ? "student" : "class")}/>}
             </>
           )}
 
@@ -607,6 +580,10 @@ export default function Home() {
 
       {modal === "project" && profile.role === "teacher" && <Modal title="Adicionar projeto" subtitle="O arquivo será privado e ficará disponível para os alunos da turma escolhida." onClose={() => setModal(null)}>
         <form className="form-stack" onSubmit={createProject}><label>Nome do projeto</label><input required maxLength={100} value={projectTitle} onChange={e => setProjectTitle(e.target.value)} placeholder="Ex.: Jogo de plataforma"/><label>Descrição</label><textarea required maxLength={600} value={projectDescription} onChange={e => setProjectDescription(e.target.value)} placeholder="Explique a atividade e o que será desenvolvido."/><label>Nível</label><select value={projectDifficulty} onChange={e => setProjectDifficulty(e.target.value)}><option>Iniciante</option><option>Intermediário</option><option>Avançado</option></select><label>Disponibilizar para</label><select required value={projectClass} onChange={e => setProjectClass(e.target.value)}><option value="">Selecione uma turma</option>{classes.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select><label>Arquivo do GameMaker (.zip)</label><input type="file" accept=".zip,application/zip" required onChange={e => setProjectFile(e.target.files?.[0] || null)}/><div className="modal-actions"><button type="button" className="button secondary" onClick={() => setModal(null)}>Cancelar</button><button className="button primary" disabled={busy === "project" || !projectFile}>{busy === "project" ? <LoaderCircle className="spin" size={16}/> : <Upload size={16}/>} Salvar projeto</button></div></form>
+      </Modal>}
+
+      {modal === "student" && profile.role === "teacher" && <Modal title="Cadastrar aluno" subtitle="Crie a conta, defina a senha inicial e escolha a turma." onClose={() => setModal(null)}>
+        <form className="form-stack" onSubmit={createStudent}><label>Nome completo</label><input required maxLength={80} value={studentName} onChange={e => setStudentName(e.target.value)} placeholder="Nome do aluno"/><label>Nome de usuário</label><input required minLength={3} maxLength={32} pattern="[A-Za-z0-9_.-]+" value={studentUsername} onChange={e => setStudentUsername(e.target.value)} placeholder="Ex.: aluno01"/><label>Senha inicial</label><input required minLength={8} maxLength={72} type="password" value={studentPassword} onChange={e => setStudentPassword(e.target.value)} placeholder="Mínimo de 8 caracteres"/><label>Turma</label><select required value={studentClass} onChange={e => setStudentClass(e.target.value)}><option value="">Selecione uma turma</option>{classes.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select><div className="modal-actions"><button type="button" className="button secondary" onClick={() => setModal(null)}>Cancelar</button><button className="button primary" disabled={busy === "student" || !classes.length}>{busy === "student" ? <LoaderCircle className="spin" size={16}/> : <Plus size={16}/>} Criar conta</button></div></form>
       </Modal>}
 
       {modal === "join" && profile.role === "student" && <Modal title="Entrar em uma turma" subtitle="Peça ao professor o código de acesso da turma." onClose={() => setModal(null)}>
