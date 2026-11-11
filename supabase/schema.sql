@@ -115,9 +115,16 @@ returns boolean language sql stable security definer set search_path = public as
 $$;
 
 create or replace function public.is_class_member(target_class uuid)
-returns boolean language sql stable security definer set search_path = public as $$
+returns boolean language sql stable security definer set search_path = public as $
   select exists (select 1 from public.class_members cm where cm.class_id = target_class and cm.student_id = auth.uid());
-$$;
+$;
+
+create or replace function public.is_student_profile(target_user uuid)
+returns boolean language sql stable security definer set search_path = public as $
+  select exists (select 1 from public.profiles p where p.id = target_user and p.role = 'student');
+$;
+
+create unique index profiles_username_case_insensitive_idx on public.profiles (lower(username));
 
 alter table public.profiles enable row level security;
 alter table public.classes enable row level security;
@@ -154,7 +161,9 @@ for delete to authenticated using (teacher_id = auth.uid());
 create policy "class_members_read_teacher_or_student" on public.class_members
 for select to authenticated using (student_id = auth.uid() or public.teaches_class(class_id));
 create policy "class_members_manage_teacher" on public.class_members
-for all to authenticated using (public.teaches_class(class_id)) with check (public.teaches_class(class_id));
+for all to authenticated
+using (public.teaches_class(class_id))
+with check (public.teaches_class(class_id) and public.is_student_profile(student_id));
 
 create policy "projects_read_creator_or_assigned_student" on public.projects
 for select to authenticated using (
