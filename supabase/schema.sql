@@ -312,6 +312,7 @@ for select to authenticated using (
 create policy "students_upload_own_submissions" on storage.objects
 for insert to authenticated with check (
   bucket_id = 'student-submissions'
+  and public.is_student_profile(auth.uid())
   and (storage.foldername(name))[1] = 'student'
   and (storage.foldername(name))[2] = auth.uid()::text
 );
