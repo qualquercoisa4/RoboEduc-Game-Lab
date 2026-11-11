@@ -167,6 +167,44 @@ returns boolean language sql stable security definer set search_path = public as
   );
 $$;
 
+create or replace function public.join_class_by_code(entered_code text)
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $
+declare
+  target_class_id uuid;
+begin
+  if auth.uid() is null then
+    raise exception 'Faça login para entrar em uma turma.';
+  end if;
+
+  if not public.is_student_profile(auth.uid()) then
+    raise exception 'Somente contas de aluno podem entrar em turmas.';
+  end if;
+
+  select id
+  into target_class_id
+  from public.classes
+  where access_code = upper(trim(entered_code))
+    and is_active = true;
+
+  if target_class_id is null then
+    raise exception 'Código de turma inválido ou turma inativa.';
+  end if;
+
+  insert into public.class_members (class_id, student_id)
+  values (target_class_id, auth.uid())
+  on conflict (class_id, student_id) do nothing;
+
+  return target_class_id;
+end;
+$;
+
+revoke all on function public.join_class_by_code(text) from public;
+grant execute on function public.join_class_by_code(text) to authenticated;
+
 alter table public.profiles enable row level security;
 alter table public.classes enable row level security;
 alter table public.class_members enable row level security;
