@@ -5,7 +5,7 @@ Plataforma educacional da RoboEduc para organizar turmas, distribuir projetos ed
 ## Stack
 - Next.js App Router
 - React + TypeScript
-- Tailwind CSS
+- CSS responsivo com identidade visual RoboEduc
 - Supabase Auth, Postgres e Storage (integração na próxima etapa)
 
 ## Desenvolvimento
