@@ -1,8 +1,9 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import type { FormEvent } from "react";
 import {
-  ArrowRight, BookOpen, Check, ChevronDown, CircleAlert, Copy, Download,
+  ArrowRight, BookOpen, CircleAlert, Copy, Download,
   FileArchive, FolderOpen, Gamepad2, GraduationCap, LayoutDashboard,
   LoaderCircle, LogOut, Plus, RefreshCw, Search, ShieldCheck, Trash2,
   Upload, Users, X,
