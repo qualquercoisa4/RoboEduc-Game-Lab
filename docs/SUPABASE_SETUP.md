@@ -2,20 +2,19 @@
 
 ## 1. Banco de dados
 
-1. Crie um projeto Supabase na região South America (São Paulo).
-2. Execute o conteúdo de `supabase/schema.sql` no SQL Editor.
-3. Em Project Settings → API, copie a Project URL e a chave publicável para as variáveis do Vercel.
-4. Copie também a chave `service_role` para uma variável de servidor chamada `SUPABASE_SERVICE_ROLE_KEY`. Nunca a publique no navegador ou no GitHub.
+1. Crie um projeto Supabase na região **South America (São Paulo)**.
+2. Execute todo o conteúdo de `supabase/schema.sql` no SQL Editor.
+3. Em Authentication → Providers → Email, desative **Confirm email**. O Game Lab usa nomes de usuário com e-mails internos, que não recebem mensagens.
+4. Em Project Settings → API, copie a Project URL e a chave publicável.
 
 ## 2. Conta inicial do professor
 
-No Supabase → Authentication → Users, crie o primeiro usuário com:
+A conta administrativa é criada diretamente no painel do Supabase, não pelo cadastro público.
 
-- E-mail interno: `roboeduc@roboeduc.local`
-- Senha: defina a senha administrativa desejada diretamente no Supabase.
-- Confirme o usuário ao criá-lo.
-
-O gatilho do banco cria o perfil como aluno por padrão. Em seguida, no SQL Editor, execute o comando abaixo para promover **somente essa conta inicial**:
+1. Abra Authentication → Users → Add user.
+2. Crie o usuário com e-mail `roboeduc@roboeduc.local` e defina ali a senha administrativa.
+3. Confirme a conta.
+4. No SQL Editor, execute:
 
 ```sql
 update public.profiles
@@ -23,31 +22,33 @@ set username = 'ROBOEDUC',
     display_name = 'Administrador RoboEduc',
     role = 'teacher'
 where id = (
-  select id from auth.users
+  select id
+  from auth.users
   where lower(email) = 'roboeduc@roboeduc.local'
 );
 ```
 
 
-Não existe cadastro público de professor. Os alunos são criados dentro do painel do professor, sempre com a função `student` definida pelo servidor.
+O trigger cria todas as contas novas com a função `student`. A permissão de professor não é selecionável na tela de cadastro e não pode ser alterada pelo próprio usuário.
 
-## 3. Variáveis do Vercel
+## 3. Publicação na Vercel
 
-Configure em Production, Preview e Development:
+Configure as duas variáveis abaixo em Production, Preview e Development:
 
 - `NEXT_PUBLIC_SUPABASE_URL`
-- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-- `SUPABASE_SERVICE_ROLE_KEY` (somente servidor)
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY` (pode receber a chave publicável do projeto)
 
-Depois de adicionar ou alterar variáveis, faça um novo deploy.
+Depois de alterar as variáveis, faça um novo deploy. A chave `service_role` não é necessária neste fluxo e nunca deve ser exposta ao navegador.
 
-## 4. Fluxo de arquivos
+## 4. Cadastro e entrada dos alunos
+
+O aluno cria a própria conta usando nome, usuário e senha e informa o código compartilhado pelo professor. O banco valida o código e associa a conta exclusivamente como aluno. Também é possível entrar em outra turma depois, pela seção Turmas.
+
+O usuário `ROBOEDUC` fica reservado. O cadastro público não permite criá-lo nem escolher a função de professor.
+
+## 5. Arquivos privados
 
 - Projetos: `project-files/teacher/{teacher-id}/{project-id}/{arquivo}.zip`
 - Entregas: `student-submissions/student/{student-id}/{submission-id}/{arquivo}.zip`
 
-Os buckets são privados. A interface gera links temporários somente depois da autorização pelas políticas RLS.
-
-## 5. Acesso dos alunos
-
-O professor cadastra nome, usuário, senha inicial e turma. O servidor cria a conta Auth, marca o e-mail interno como confirmado e associa a conta à turma. Não existe formulário de cadastro público de alunos ou professores.
+Os dois buckets são privados. As regras de Storage e RLS limitam o acesso a professores responsáveis e alunos vinculados à atividade.
