@@ -242,7 +242,7 @@ export default function Home() {
 
   async function createProject(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!db || !profile || !projectTitle.trim() || !projectFile) return;
+    if (!db || !profile || !projectTitle.trim() || !projectFile || !projectClass) return;
     if (!projectFile.name.toLowerCase().endsWith(".zip")) return notify("Envie um arquivo .zip.");
     setBusy("project");
     const id = crypto.randomUUID();
@@ -258,18 +258,21 @@ export default function Home() {
     const { error: projectError } = await db.from("projects").insert({
       id, created_by: profile.id, code, title: projectTitle.trim(),
       description: projectDescription.trim(), difficulty: projectDifficulty,
-      file_path: path, is_published: Boolean(projectClass),
+      file_path: path, is_published: true,
     });
     if (projectError) {
       await db.storage.from("project-files").remove([path]);
       setBusy("");
       return notify("Falha ao cadastrar o projeto: " + projectError.message);
     }
-    if (projectClass) {
-      const { error: assignmentError } = await db.from("project_assignments").insert({
-        project_id: id, class_id: projectClass, assigned_by: profile.id,
-      });
-      if (assignmentError) notify("Projeto salvo, mas não foi possível atribuí-lo: " + assignmentError.message);
+    const { error: assignmentError } = await db.from("project_assignments").insert({
+      project_id: id, class_id: projectClass, assigned_by: profile.id,
+    });
+    if (assignmentError) {
+      await db.from("projects").delete().eq("id", id);
+      await db.storage.from("project-files").remove([path]);
+      setBusy("");
+      return notify("Não foi possível atribuir o projeto à turma: " + assignmentError.message);
     }
     setBusy("");
     setProjectTitle("");
@@ -508,7 +511,7 @@ export default function Home() {
 
           {tab === "projects" && (
             <>
-              <div className="page-heading"><div><span className="kicker">BIBLIOTECA</span><h1>Projetos</h1><p>{profile.role === "teacher" ? "Adicione arquivos .zip e atribua atividades às turmas." : "Baixe o arquivo inicial e envie seu projeto concluído."}</p></div>{profile.role === "teacher" ? <button className="button primary" onClick={() => setModal("project")}><Plus size={17}/> Novo projeto</button> : null}</div>
+              <div className="page-heading"><div><span className="kicker">BIBLIOTECA</span><h1>Projetos</h1><p>{profile.role === "teacher" ? "Adicione arquivos .zip diretamente às turmas." : "Baixe o arquivo inicial e envie seu projeto concluído."}</p></div>{profile.role === "teacher" ? <button className="button primary" onClick={() => setModal("project")} disabled={!classes.length}><Plus size={17}/> Novo projeto</button> : null}</div>
               <div className="search-field"><Search size={17}/><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Pesquisar projetos..."/></div>
               {filteredProjects.length ? <div className="card-grid">{filteredProjects.map(item => {
                 const assigned = assignments.filter(a => a.project_id === item.id).length;
@@ -553,8 +556,8 @@ export default function Home() {
         <form className="form-stack" onSubmit={createClass}><label>Nome da turma</label><input autoFocus required maxLength={80} value={className} onChange={e => setClassName(e.target.value)} placeholder="Ex.: GameMaker - F2" /><label>Descrição (opcional)</label><textarea value={classDescription} onChange={e => setClassDescription(e.target.value)} placeholder="Informações sobre a turma"/><div className="modal-actions"><button type="button" className="button secondary" onClick={() => setModal(null)}>Cancelar</button><button className="button primary" disabled={busy === "class"}>{busy === "class" ? <LoaderCircle className="spin" size={16}/> : <Plus size={16}/>} Criar turma</button></div></form>
       </Modal>}
 
-      {modal === "project" && profile.role === "teacher" && <Modal title="Adicionar projeto" subtitle="O projeto será armazenado de forma privada e atribuído à turma selecionada." onClose={() => setModal(null)}>
-        <form className="form-stack" onSubmit={createProject}><label>Nome do projeto</label><input required maxLength={100} value={projectTitle} onChange={e => setProjectTitle(e.target.value)} placeholder="Ex.: Jogo de plataforma"/><label>Descrição</label><textarea required maxLength={600} value={projectDescription} onChange={e => setProjectDescription(e.target.value)} placeholder="Explique a atividade e o que será desenvolvido."/><label>Nível</label><select value={projectDifficulty} onChange={e => setProjectDifficulty(e.target.value)}><option>Iniciante</option><option>Intermediário</option><option>Avançado</option></select><label>Disponibilizar para</label><select value={projectClass} onChange={e => setProjectClass(e.target.value)}><option value="">Salvar na biblioteca sem atribuir</option>{classes.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select><label>Arquivo do GameMaker (.zip)</label><input type="file" accept=".zip,application/zip" required onChange={e => setProjectFile(e.target.files?.[0] || null)}/><div className="modal-actions"><button type="button" className="button secondary" onClick={() => setModal(null)}>Cancelar</button><button className="button primary" disabled={busy === "project" || !projectFile}>{busy === "project" ? <LoaderCircle className="spin" size={16}/> : <Upload size={16}/>} Salvar projeto</button></div></form>
+      {modal === "project" && profile.role === "teacher" && <Modal title="Adicionar projeto" subtitle="O arquivo será privado e ficará disponível para os alunos da turma escolhida." onClose={() => setModal(null)}>
+        <form className="form-stack" onSubmit={createProject}><label>Nome do projeto</label><input required maxLength={100} value={projectTitle} onChange={e => setProjectTitle(e.target.value)} placeholder="Ex.: Jogo de plataforma"/><label>Descrição</label><textarea required maxLength={600} value={projectDescription} onChange={e => setProjectDescription(e.target.value)} placeholder="Explique a atividade e o que será desenvolvido."/><label>Nível</label><select value={projectDifficulty} onChange={e => setProjectDifficulty(e.target.value)}><option>Iniciante</option><option>Intermediário</option><option>Avançado</option></select><label>Disponibilizar para</label><select required value={projectClass} onChange={e => setProjectClass(e.target.value)}><option value="">Selecione uma turma</option>{classes.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select><label>Arquivo do GameMaker (.zip)</label><input type="file" accept=".zip,application/zip" required onChange={e => setProjectFile(e.target.files?.[0] || null)}/><div className="modal-actions"><button type="button" className="button secondary" onClick={() => setModal(null)}>Cancelar</button><button className="button primary" disabled={busy === "project" || !projectFile}>{busy === "project" ? <LoaderCircle className="spin" size={16}/> : <Upload size={16}/>} Salvar projeto</button></div></form>
       </Modal>}
 
       {modal === "student" && profile.role === "teacher" && <Modal title="Cadastrar aluno" subtitle="Crie uma conta e vincule o aluno a uma turma. A senha inicial deve ser entregue ao aluno." onClose={() => setModal(null)}>
